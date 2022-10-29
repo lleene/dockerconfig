@@ -1,0 +1,17 @@
+version: "3.5"
+
+services:
+  blog:
+    container_name: personal-blog
+    build:
+      context: "."
+      args:
+        HUGO_ENV_ARG: "production"
+        HUGO_CMD: "-s /src/personal-page"
+
+  client:
+      image: nginx
+      ports:
+          - 8000:80
+      volumes:
+          - ./src:/usr/share/nginx/html
