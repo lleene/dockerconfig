@@ -7,3 +7,4 @@ services:
       context: ./personal-page
       args:
         HUGO_ENV_ARG: "production"
+        HUGO_CMD: "-d localhost"
