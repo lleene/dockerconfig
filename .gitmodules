@@ -1,0 +1,3 @@
+[submodule "personal-page"]
+	path = personal-page
+	url = ssh://git.leene.dev:7676/lieuwe/personal-page.git
