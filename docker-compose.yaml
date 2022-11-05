@@ -1,12 +1,24 @@
-version: "3.5"
+version: "3.8"
 
 networks:
-  gitea:
+  internalnet:
     external: false
 
+x-mail: &defaults
+  env_file: local.env
+  networks:
+    - internalnet
+
 services:
+  ddnsgd:
+    <<: *defaults
+    container_name: "ddnsgd"
+    image: "ghcr.io/dominickbrasileiro/ddnsgd"
+    restart: "always"
+
   database:
-    container_name: PGSQLdb
+    <<: *defaults
+    container_name: pgsqlserver
     image: postgres:15
     volumes:
       - type: bind
@@ -16,44 +28,50 @@ services:
     restart: always
     ports:
       - "5432:5432"
-    environment:
-      POSTGRES_USER: "pgadmin"
-      POSTGRES_PASSWORD: "hear397sew"
-      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
-      POSTGRES_MULTIPLE_DATABASES: "gitea, postfix"
-    networks:
-      - gitea
+
+  roundcubemail:
+    <<: *defaults
+    image: roundcube/roundcubemail:latest-fpm
+    container_name: roundcube
+    depends_on:
+      - roundcubedb
+    links:
+      - roundcubedb
+    ports:
+      - 9000:9000
+    volumes:
+      - ./mail/html:/var/www/html
+
+
+  mailserver:
+    <<: *defaults
+    image: docker.io/mailserver/docker-mailserver:latest
+    container_name: mailserver
+    hostname: mail
+    domainname: zathura.leene.dev
+    ports:
+      - "25:25"
+      - "143:143"
+      - "587:587"
+      - "993:993"
+    volumes:
+      - ./mail/mail-data/:/var/mail/
+      - ./mail/mail-state/:/var/mail-state/
+      - ./mail/mail-logs/:/var/log/mail/
+      - ./mail/config/:/tmp/docker-mailserver/
+      - /etc/localtime:/etc/localtime:ro
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      - ddnsgd
+    restart: always
+
 
   adminer:
+    <<: *defaults
     image: adminer
     restart: always
     depends_on:
       - database
     ports:
-      - 8080:8080
-    networks:
-      - gitea
-
-  server:
-    image: gitea/gitea
-    container_name: gitea
-    environment:
-      - USER_UID=1000
-      - USER_GID=1000
-      - GITEA__database__DB_TYPE=postgres
-      - GITEA__database__HOST=database:5432
-      - GITEA__database__NAME=gitea
-      - GITEA__database__USER=gitea
-      - GITEA__database__PASSWD="hear397sew"
-    restart: always
-    networks:
-      - gitea
-    volumes:
-      - ./gitea:/data
-      - /etc/timezone:/etc/timezone:ro
-      - /etc/localtime:/etc/localtime:ro
-    ports:
-      - "3000:3000"
-      - "222:22"
-    depends_on:
-      - database
+      - "8080:8080"
