@@ -2,7 +2,7 @@ version: "3.8"
 
 networks:
   internalnet:
-    external: false
+
 
 x-mail: &defaults
   env_file: local.env
@@ -23,20 +23,29 @@ services:
     volumes:
       - type: bind
         source: ./pgsql
-        target: /var/lib/postgresql/data
-      - ./pg-init-scripts:/docker-entrypoint-initdb.d
+        target: /var/lib/postgresql/data:z
+      - ./config/pg-init-scripts:/docker-entrypoint-initdb.d
     restart: always
     ports:
       - "5432:5432"
+
+  adminer:
+    <<: *defaults
+    image: adminer
+    restart: always
+    depends_on:
+      - database
+    ports:
+      - "8080:8080"
 
   roundcubemail:
     <<: *defaults
     image: roundcube/roundcubemail:latest-fpm
     container_name: roundcube
     depends_on:
-      - roundcubedb
+      - database
     links:
-      - roundcubedb
+      - database
     ports:
       - 9000:9000
     volumes:
@@ -44,6 +53,7 @@ services:
 
 
   mailserver:
+    build: .
     <<: *defaults
     image: docker.io/mailserver/docker-mailserver:latest
     container_name: mailserver
@@ -55,23 +65,48 @@ services:
       - "587:587"
       - "993:993"
     volumes:
-      - ./mail/mail-data/:/var/mail/
-      - ./mail/mail-state/:/var/mail-state/
-      - ./mail/mail-logs/:/var/log/mail/
-      - ./mail/config/:/tmp/docker-mailserver/
+      - ./mail/letsencrypt:/etc/letsencrypt:z
+      - ./mail/mail-data/:/var/mail/:z
+      - ./mail/mail-state/:/var/mail-state/:z
+      - ./mail/mail-logs/:/var/log/mail/:z
+      - ./mail/config/:/tmp/docker-mailserver/:z
+      - ./mail/certs/:/certs:z
       - /etc/localtime:/etc/localtime:ro
+
     cap_add:
       - NET_ADMIN
     depends_on:
       - ddnsgd
     restart: always
 
-
-  adminer:
+  reverse-proxy:
     <<: *defaults
-    image: adminer
+    image: nginxproxy/nginx-proxy
+    container_name: nginx-proxy
     restart: always
-    depends_on:
-      - database
     ports:
-      - "8080:8080"
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf/:/etc/nginx/conf.d:z
+      - ./nginx/html/:/usr/share/nginx/html/:z
+      - ./nginx/vhost/:/etc/nginx/vhost.d/:z
+      - ./nginx/certs/:/etc/nginx/certs/:ro
+      - ./nginx/dhparam:/etc/nginx/dhparam:z
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+    depends_on:
+      - ddnsgd
+
+  acme-companion:
+    <<: *defaults
+    image: nginxproxy/acme-companion
+    container_name: nginx-proxy-acme
+    restart: always
+    volumes_from:
+      - reverse-proxy
+    volumes:
+      - ./nginx/certs/:/etc/nginx/certs/:rw
+      - ./nginx/acme-state/:/etc/acme.sh/:z
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - ddnsgd
