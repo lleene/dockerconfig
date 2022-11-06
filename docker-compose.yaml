@@ -2,6 +2,8 @@ version: "3.8"
 
 networks:
   internalnet:
+    driver: bridge
+    enable_ipv6: false
 
 
 x-mail: &defaults
@@ -16,7 +18,7 @@ services:
     image: "ghcr.io/dominickbrasileiro/ddnsgd"
     restart: "always"
 
-  database:
+  pgsqlserver:
     <<: *defaults
     container_name: pgsqlserver
     image: postgres:15
@@ -29,33 +31,25 @@ services:
     ports:
       - "5432:5432"
 
-  adminer:
-    <<: *defaults
-    image: adminer
-    restart: always
-    depends_on:
-      - database
-    ports:
-      - "8080:8080"
-
   roundcubemail:
     <<: *defaults
     image: roundcube/roundcubemail:latest-fpm
-    container_name: roundcube
+    container_name: roundcubemail
+    environment:
+      - ROUNDCUBEMAIL_DB_HOST=pgsqlserver
     depends_on:
-      - database
+      - pgsqlserver
     links:
-      - database
+      - pgsqlserver
     ports:
-      - 9000:9000
+      - "9000:9000"
     volumes:
-      - ./mail/html:/var/www/html:z
-
+      - ./nginx/html/:/var/www/html/:z
 
   mailserver:
     build: .
     <<: *defaults
-    image: docker.io/mailserver/docker-mailserver:latest
+    image: mailserver/docker-mailserver:latest
     container_name: mailserver
     hostname: mail
     domainname: zathura.leene.dev
@@ -65,12 +59,12 @@ services:
       - "587:587"
       - "993:993"
     volumes:
-      - ./mail/letsencrypt:/etc/letsencrypt:z
+      - ./nginx/certs/:/etc/letsencrypt/live/:z
       - ./mail/mail-data/:/var/mail/:z
       - ./mail/mail-state/:/var/mail-state/:z
       - ./mail/mail-logs/:/var/log/mail/:z
       - ./mail/config/:/tmp/docker-mailserver/:z
-      - ./mail/certs/:/certs:z
+      - ./nginx/certs/:/certs/:z
       - /etc/localtime:/etc/localtime:ro
 
     cap_add:
@@ -83,6 +77,8 @@ services:
     <<: *defaults
     image: nginxproxy/nginx-proxy
     container_name: nginx-proxy
+    environment:
+      - NGINX_PHP_CGI=roundcubemail:9000
     restart: always
     ports:
       - "80:80"
@@ -91,9 +87,9 @@ services:
       - ./nginx/conf/:/etc/nginx/conf.d:z
       - ./nginx/html/:/usr/share/nginx/html/:z
       - ./nginx/vhost/:/etc/nginx/vhost.d/:z
-      - ./nginx/certs/:/etc/nginx/certs/:ro
+      - ./nginx/certs/:/etc/nginx/certs/:z
       - ./nginx/dhparam:/etc/nginx/dhparam:z
-      - /var/run/docker.sock:/tmp/docker.sock:ro
+      - /var/run/docker.sock:/tmp/docker.sock:z
     depends_on:
       - ddnsgd
 
@@ -105,8 +101,8 @@ services:
     volumes_from:
       - reverse-proxy
     volumes:
-      - ./nginx/certs/:/etc/nginx/certs/:rw
+      - ./nginx/certs/:/etc/nginx/certs/:z
       - ./nginx/acme-state/:/etc/acme.sh/:z
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/docker.sock:/var/run/docker.sock:z
     depends_on:
       - ddnsgd
