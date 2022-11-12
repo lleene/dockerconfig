@@ -1,0 +1,27 @@
+
+root  /var/www/html/roundcubemail;
+index  index.php index.html index.htm;
+client_max_body_size 128M;
+
+location / {
+    try_files $uri $uri/ /index.php?q=$uri&$args;
+}
+
+location ~ \.php$ {
+    try_files $uri =404;
+    fastcgi_keep_conn on;
+    fastcgi_split_path_info ^(.+\.php)(.*)$;
+    fastcgi_pass zathura.leene.dev;
+    fastcgi_index index.php;
+    fastcgi_param PATH_INFO $fastcgi_path_info;
+    fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    include fastcgi_params;
+}
+
+location ~ ^/(README|INSTALL|LICENSE|CHANGELOG|UPGRADING)$ {
+    deny all;
+}
+
+location ~ ^/(bin|SQL)/ {
+    deny all;
+}
