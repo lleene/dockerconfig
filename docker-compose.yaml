@@ -3,13 +3,9 @@ version: "3.5"
 services:
   blog:
     container_name: personal-blog
-    build:
-      context: ./personal-page
-      args:
-        HUGO_ENV_ARG: "production"
-        HUGO_CMD: "-d ${NGINX_HOST}"
+    image: nginx:alpine
     volumes:
-        - hugo_data:/var/www/hugo:z
-
-volumes:
-  hugo_data:
+      - ./config/hugo/public:/usr/share/nginx/html:ro,z
+    restart: always
+    ports:
+      - 6262:80
