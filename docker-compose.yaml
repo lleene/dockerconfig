@@ -7,4 +7,9 @@ services:
       context: ./personal-page
       args:
         HUGO_ENV_ARG: "production"
-        HUGO_CMD: "-d localhost"
+        HUGO_CMD: "-d ${NGINX_HOST}"
+    volumes:
+        - hugo_data:/var/www/hugo:z
+
+volumes:
+  hugo_data:
