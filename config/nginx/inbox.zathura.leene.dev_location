@@ -1,5 +1,5 @@
 
-root  /var/www/html/roundcube;
+root  /var/www/roundcube;
 index  index.php index.html index.htm;
 
 location / {

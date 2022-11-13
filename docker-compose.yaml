@@ -18,7 +18,7 @@ services:
     container_name: pgsqlserver
     image: postgres:15
     environment:
-      - POSTGRES_MULTIPLE_DATABASES="gitea, roundcube"
+      - POSTGRES_MULTIPLE_DATABASES=gitea, roundcube
     volumes:
       - sql_data:/var/lib/postgresql/data/:z
       - ./config/pg-init-scripts:/docker-entrypoint-initdb.d:ro
@@ -67,6 +67,7 @@ services:
       - "9000"
     volumes:
       - mail_html:/var/www/html:z
+      - mail_html:/var/www/roundcube:z
 
   mailserver:
     build: ./config/mail
@@ -105,8 +106,8 @@ services:
       - nginx_certs:/etc/nginx/certs/:z
       - nginx_conf:/etc/nginx/conf.d/:z
       - nginx_vhost:/etc/nginx/vhost.d/:z
-      - nginx_html:/usr/share/nginx/html/:z
-      - mail_html:/var/www/html/roundcube:z
+      - nginx_html:/usr/share/nginx/html:z
+      - mail_html:/var/www/roundcube:z
       - ./config/nginx/inbox.zathura.leene.dev_location:/etc/nginx/vhost.d/inbox.zathura.leene.dev_location:z
       - /var/run/docker.sock:/tmp/docker.sock:z
     depends_on:
