@@ -17,6 +17,8 @@ services:
     <<: *defaults
     container_name: pgsqlserver
     image: postgres:15
+    environment:
+      - POSTGRES_MULTIPLE_DATABASES="gitea, roundcube"
     volumes:
       - sql_data:/var/lib/postgresql/data/:z
       - ./config/pg-init-scripts:/docker-entrypoint-initdb.d:ro
@@ -24,13 +26,37 @@ services:
     expose:
       - "5432"
 
+  gitea:
+    <<: *defaults
+    container_name: gitea
+    image: gitea/gitea
+    restart: always
+    environment:
+      - VIRTUAL_HOST=git.zathura.leene.dev
+      - VIRTUAL_PORT=3000
+      - LETSENCRYPT_HOST=zathura.leene.dev
+      - LETSENCRYPT_EMAIL=admin@zathura.leene.dev
+    volumes:
+      - gitea_data:/data:z
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    expose:
+      - "3000"
+    ports:
+      - "222:22"
+    depends_on:
+      - pgsqlserver
+    links:
+      - pgsqlserver
+
   roundcubemail:
     <<: *defaults
     image: roundcube/roundcubemail:latest-fpm
     container_name: roundcubemail
     environment:
       - ROUNDCUBEMAIL_DB_HOST=pgsqlserver
-      - VIRTUAL_HOST=zathura.leene.dev
+      - VIRTUAL_HOST=inbox.zathura.leene.dev
+      - VIRTUAL_PORT=9000
       - LETSENCRYPT_HOST=zathura.leene.dev
       - LETSENCRYPT_EMAIL=admin@zathura.leene.dev
     depends_on:
@@ -65,7 +91,6 @@ services:
     depends_on:
       - ddnsgd
     restart: always
-
 
   reverse-proxy:
     <<: *defaults
@@ -107,8 +132,8 @@ services:
     build: ./config/nginx
 
 volumes:
-  sql_data:
   acme-state:
+  gitea_data:
   nginx_certs:
   nginx_dhparam:
   nginx_html:
@@ -117,3 +142,4 @@ volumes:
   mail_data:
   mail_config:
   mail_state:
+  sql_data:
