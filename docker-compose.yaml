@@ -1,5 +1,6 @@
 version: "3.8"
 
+
 networks:
   internalnet:
     driver: bridge
@@ -19,6 +20,7 @@ services:
     image: postgres:15
     environment:
       - POSTGRES_MULTIPLE_DATABASES=gitea, roundcube
+      - POSTGRES_PASSWORD=${SQL_PSWD}
     volumes:
       - sql_data:/var/lib/postgresql/data/:z
       - ./config/pg-init-scripts:/docker-entrypoint-initdb.d:ro
@@ -32,10 +34,9 @@ services:
     image: gitea/gitea
     restart: always
     environment:
-      - VIRTUAL_HOST=git.zathura.leene.dev
+      - VIRTUAL_HOST=git.${NGINX_HOST}
       - VIRTUAL_PORT=3000
-      - LETSENCRYPT_HOST=git.zathura.leene.dev
-      - LETSENCRYPT_EMAIL=admin@zathura.leene.dev
+      - LETSENCRYPT_HOST=git.${NGINX_HOST}
     volumes:
       - gitea_data:/data:z
       - /etc/timezone:/etc/timezone:ro
@@ -54,11 +55,13 @@ services:
     image: roundcube/roundcubemail:latest-fpm
     container_name: roundcubemail
     environment:
-      - ROUNDCUBEMAIL_DB_HOST=pgsqlserver
-      - VIRTUAL_HOST=inbox.zathura.leene.dev
+      - VIRTUAL_HOST=inbox.${NGINX_HOST}
       - VIRTUAL_PORT=9000
-      - LETSENCRYPT_HOST=inbox.zathura.leene.dev
-      - LETSENCRYPT_EMAIL=admin@zathura.leene.dev
+      - LETSENCRYPT_HOST=inbox.${NGINX_HOST}
+      - ROUNDCUBEMAIL_DB_HOST=pgsqlserver
+      - ROUNDCUBEMAIL_DEFAULT_HOST=tls://${NGINX_HOST}
+      - ROUNDCUBEMAIL_SMTP_SERVER=tls://${NGINX_HOST}
+      - ROUNDCUBEMAIL_DB_PASSWORD=${SQL_PSWD}
     depends_on:
       - pgsqlserver
     links:
@@ -75,7 +78,9 @@ services:
     image: mailserver/docker-mailserver:latest
     container_name: mailserver
     hostname: inbox
-    domainname: zathura.leene.dev
+    domainname: ${NGINX_HOST}
+    environment:
+      - POSTMASTER_ADDRESS=admin@${NGINX_HOST}
     ports:
       - "25:25"
       - "143:143"
@@ -98,6 +103,8 @@ services:
     image: nginxproxy/nginx-proxy
     container_name: nginx-proxy
     restart: always
+    environment:
+      - DEFAULT_EMAIL=admin@${NGINX_HOST}
     ports:
       - "80:80"
       - "443:443"
@@ -108,7 +115,7 @@ services:
       - nginx_vhost:/etc/nginx/vhost.d/:z
       - nginx_html:/usr/share/nginx/html:z
       - mail_html:/var/www/roundcube:z
-      - ./config/nginx/inbox.zathura.leene.dev_location:/etc/nginx/vhost.d/inbox.zathura.leene.dev_location:z
+      - ./config/nginx/inbox_location:/etc/nginx/vhost.d/inbox.${NGINX_HOST}_location:z
       - /var/run/docker.sock:/tmp/docker.sock:z
     depends_on:
       - ddnsgd
@@ -118,6 +125,10 @@ services:
     container_name: "ddnsgd"
     image: "ghcr.io/dominickbrasileiro/ddnsgd"
     restart: "always"
+    environment:
+      - HOSTNAME=${NGINX_HOST}
+      - USERNAME=${DNS_USERNAME}
+      - PASSWORD=${DNS_PASSWORD}
 
   acme-companion:
     <<: *defaults
