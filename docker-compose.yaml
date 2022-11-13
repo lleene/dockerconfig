@@ -34,7 +34,7 @@ services:
     environment:
       - VIRTUAL_HOST=git.zathura.leene.dev
       - VIRTUAL_PORT=3000
-      - LETSENCRYPT_HOST=zathura.leene.dev
+      - LETSENCRYPT_HOST=git.zathura.leene.dev
       - LETSENCRYPT_EMAIL=admin@zathura.leene.dev
     volumes:
       - gitea_data:/data:z
@@ -57,7 +57,7 @@ services:
       - ROUNDCUBEMAIL_DB_HOST=pgsqlserver
       - VIRTUAL_HOST=inbox.zathura.leene.dev
       - VIRTUAL_PORT=9000
-      - LETSENCRYPT_HOST=zathura.leene.dev
+      - LETSENCRYPT_HOST=inbox.zathura.leene.dev
       - LETSENCRYPT_EMAIL=admin@zathura.leene.dev
     depends_on:
       - pgsqlserver
@@ -66,14 +66,14 @@ services:
     expose:
       - "9000"
     volumes:
-      - nginx_html/roundcubemail:/var/www/html
+      - mail_html:/var/www/html:z
 
   mailserver:
     build: ./config/mail
     <<: *defaults
     image: mailserver/docker-mailserver:latest
     container_name: mailserver
-    hostname: mail
+    hostname: inbox
     domainname: zathura.leene.dev
     ports:
       - "25:25"
@@ -81,7 +81,7 @@ services:
       - "587:587"
       - "993:993"
     volumes:
-      - nginx_certs:/etc/letsencrypt/live/
+      - nginx_certs:/etc/letsencrypt/live:ro
       - mail_data:/var/mail/:z
       - mail_state:/var/mail-state/:z
       - mail_config:/tmp/docker-mailserver/:z
@@ -106,7 +106,8 @@ services:
       - nginx_conf:/etc/nginx/conf.d/:z
       - nginx_vhost:/etc/nginx/vhost.d/:z
       - nginx_html:/usr/share/nginx/html/:z
-      - ./config/nginx/zathura.leene.dev_location:/etc/nginx/vhost.d/zathura.leene.dev_location:ro
+      - mail_html:/var/www/html/roundcube:z
+      - ./config/nginx/inbox.zathura.leene.dev_location:/etc/nginx/vhost.d/inbox.zathura.leene.dev_location:z
       - /var/run/docker.sock:/tmp/docker.sock:z
     depends_on:
       - ddnsgd
@@ -129,7 +130,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:z
     depends_on:
       - ddnsgd
-    build: ./config/nginx
+
 
 volumes:
   acme-state:
@@ -142,4 +143,5 @@ volumes:
   mail_data:
   mail_config:
   mail_state:
+  mail_html:
   sql_data:
