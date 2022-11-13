@@ -1,3 +1,7 @@
+# Config
+
+ - Set correct domain-names in config/nginx locations
+
 # Startup
 
  - Update accounts

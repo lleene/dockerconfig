@@ -120,16 +120,6 @@ services:
     depends_on:
       - ddnsgd
 
-  ddnsgd:
-    <<: *defaults
-    container_name: "ddnsgd"
-    image: "ghcr.io/dominickbrasileiro/ddnsgd"
-    restart: "always"
-    environment:
-      - HOSTNAME=${NGINX_HOST}
-      - USERNAME=${DNS_USERNAME}
-      - PASSWORD=${DNS_PASSWORD}
-
   acme-companion:
     <<: *defaults
     image: nginxproxy/acme-companion
@@ -142,6 +132,16 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:z
     depends_on:
       - ddnsgd
+
+  ddnsgd:
+    <<: *defaults
+    container_name: "ddnsgd"
+    image: "ghcr.io/dominickbrasileiro/ddnsgd"
+    restart: "always"
+    environment:
+      - HOSTNAME=${NGINX_HOST}
+      - USERNAME=${DNS_USERNAME}
+      - PASSWORD=${DNS_PASSWORD}
 
 
 volumes:
