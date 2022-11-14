@@ -14,6 +14,22 @@ x-mail: &defaults
 
 services:
 
+  hugo-site:
+    <<: *defaults
+    container_name: hugo-site
+    image: nginx:alpine
+    environment:
+      - VIRTUAL_HOST=lieuwe.${NGINX_HOST}
+      - VIRTUAL_PORT=6262
+      - VIRTUAL_PROTO=http
+      - LETSENCRYPT_HOST=lieuwe.${NGINX_HOST}
+    volumes:
+      - ./config/hugo/public:/usr/share/nginx/html:ro,z
+      - ./config/hugo/configure:/etc/nginx/templates/default.conf.template:ro,z
+    restart: always
+    expose:
+      - "6262"
+
   pgsqlserver:
     <<: *defaults
     container_name: pgsqlserver
@@ -23,7 +39,7 @@ services:
       - POSTGRES_PASSWORD=${SQL_PSWD}
     volumes:
       - sql_data:/var/lib/postgresql/data/:z
-      - ./config/pg-init-scripts:/docker-entrypoint-initdb.d:ro
+      - ./config/pg-init-scripts:/docker-entrypoint-initdb.d:ro,z
     restart: always
     expose:
       - "5432"
@@ -39,8 +55,6 @@ services:
       - LETSENCRYPT_HOST=git.${NGINX_HOST}
     volumes:
       - gitea_data:/data:z
-      - /etc/timezone:/etc/timezone:ro
-      - /etc/localtime:/etc/localtime:ro
     expose:
       - "3000"
     ports:
@@ -87,11 +101,10 @@ services:
       - "587:587"
       - "993:993"
     volumes:
-      - nginx_certs:/etc/letsencrypt/live:ro
+      - nginx_certs:/etc/letsencrypt/live/:ro,z
       - mail_data:/var/mail/:z
       - mail_state:/var/mail-state/:z
       - mail_config:/tmp/docker-mailserver/:z
-      - /etc/localtime:/etc/localtime:ro
     cap_add:
       - NET_ADMIN
     depends_on:
@@ -109,14 +122,14 @@ services:
       - "80:80"
       - "443:443"
     volumes:
+      - nginx_html:/usr/share/nginx/html:z
+      - nginx_conf:/etc/nginx/conf.d/:z
       - nginx_dhparam:/etc/nginx/dhparam:z
       - nginx_certs:/etc/nginx/certs/:z
-      - nginx_conf:/etc/nginx/conf.d/:z
       - nginx_vhost:/etc/nginx/vhost.d/:z
-      - nginx_html:/usr/share/nginx/html:z
       - mail_html:/var/www/roundcube:z
-      - ./config/nginx/inbox_location:/etc/nginx/vhost.d/inbox.${NGINX_HOST}_location:z
-      - /var/run/docker.sock:/tmp/docker.sock:z
+      - ./config/nginx/inbox_location:/etc/nginx/vhost.d/inbox.${NGINX_HOST}_location:ro,z
+      - /var/run/docker.sock:/tmp/docker.sock:ro,z
     depends_on:
       - ddnsgd
 
@@ -129,7 +142,7 @@ services:
       - reverse-proxy
     volumes:
       - acme-state:/etc/acme.sh
-      - /var/run/docker.sock:/var/run/docker.sock:z
+      - /var/run/docker.sock:/var/run/docker.sock:ro,z
     depends_on:
       - ddnsgd
 
@@ -142,7 +155,6 @@ services:
       - HOSTNAME=${NGINX_HOST}
       - USERNAME=${DNS_USERNAME}
       - PASSWORD=${DNS_PASSWORD}
-
 
 volumes:
   acme-state:
