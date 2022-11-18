@@ -1,11 +1,29 @@
-version: "3.5"
+version: "3.8"
+
+networks:
+  internalnet:
+    driver: bridge
+    enable_ipv6: false
+
+x-mail: &defaults
+  env_file: local.env
+  networks:
+    - internalnet
 
 services:
-  blog:
-    container_name: personal-blog
+
+  hugo-site:
+    <<: *defaults
+    container_name: hugo-site
+    build: ./config/hugo
     image: nginx:alpine
+    environment:
+      - VIRTUAL_HOST=lieuwe.${NGINX_HOST}
+      - VIRTUAL_PORT=6262
+      - VIRTUAL_PROTO=http
+      - LETSENCRYPT_HOST=lieuwe.${NGINX_HOST}
     volumes:
-      - ./config/hugo/public:/usr/share/nginx/html:ro,z
+      - ./config/hugo/configure:/etc/nginx/templates/default.conf.template:ro,z
     restart: always
-    ports:
-      - 6262:80
+    expose:
+      - "6262"
