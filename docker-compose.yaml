@@ -192,6 +192,25 @@ services:
       - USERNAME=${DNS_USERNAME}
       - PASSWORD=${DNS_PASSWORD}
 
+  autodiscover:
+    image: monogramm/autodiscover-email-settings:latest
+    container_name: autodiscover
+    environment:
+      - VIRTUAL_HOST=autodiscover.${NGINX_HOST},autoconfig.${NGINX_HOST}
+      - VIRTUAL_PORT=8000
+      - DOMAIN=${NGINX_HOST}
+      - IMAP_HOST=mail.${NGINX_HOST}
+      - IMAP_PORT=993
+      - IMAP_SOCKET=SSL
+      - POP_HOST=mail.${NGINX_HOST}
+      - POP_PORT=995
+      - POP_SOCKET=SSL
+      - SMTP_HOST=mail.${NGINX_HOST}
+      - SMTP_PORT=587
+      - SMTP_SOCKET=STARTTLS
+    expose:
+      - "8000"
+
 volumes:
   acme-state:
   gitea_data:
