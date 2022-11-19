@@ -3,52 +3,89 @@ version: "3.8"
 
 networks:
   internalnet:
-    driver: bridge
-    enable_ipv6: false
+    # driver: bridge
+    # enable_ipv6: false
 
 
 x-mail: &defaults
+  restart: always
   env_file: local.env
   networks:
     - internalnet
 
 services:
+  hugo-html:
+    container_name: hugo-html
+    build:
+      context: ./config/hugo
+      args:
+        HUGO_BASE: lieuwe.${NGINX_HOST}
+    volumes:
+      - hugo_data:/public:z
+      - nginx_certs:/etc/letsencrypt/live:z
 
   hugo-site:
     <<: *defaults
     container_name: hugo-site
     image: nginx:alpine
     environment:
-      - VIRTUAL_HOST=lieuwe.${NGINX_HOST}
       - VIRTUAL_PORT=6262
       - VIRTUAL_PROTO=http
+      - VIRTUAL_HOST=lieuwe.${NGINX_HOST}
       - LETSENCRYPT_HOST=lieuwe.${NGINX_HOST}
     volumes:
-      - ./config/hugo/public:/usr/share/nginx/html:ro,z
+      - hugo_data:/var/www/html:ro,z
       - ./config/hugo/configure:/etc/nginx/templates/default.conf.template:ro,z
-    restart: always
-    expose:
-      - "6262"
+    ports:
+      - "6262:6262"
 
   pgsqlserver:
     <<: *defaults
     container_name: pgsqlserver
     image: postgres:15
     environment:
-      - POSTGRES_MULTIPLE_DATABASES=gitea, roundcube
+      - POSTGRES_MULTIPLE_DATABASES=gitea, roundcube, nextcloud
       - POSTGRES_PASSWORD=${SQL_PSWD}
     volumes:
       - sql_data:/var/lib/postgresql/data/:z
       - ./config/pg-init-scripts:/docker-entrypoint-initdb.d:ro,z
-    restart: always
+    ports:
+      - "5432:5432"
+
+  nextcloud:
+    <<: *defaults
+    image: nextcloud:fpm
+    container_name: nextcloud
+    environment:
+      - VIRTUAL_HOST=nextcloud.${NGINX_HOST}
+      - VIRTUAL_PORT=9000
+      - LETSENCRYPT_HOST=nextcloud.${NGINX_HOST}
+      - POSTGRES_HOST=pgsqlserver
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=nextcloud
+      - POSTGRES_USER=nextcloud
+      - POSTGRES_PASSWORD=${SQL_PSWD}
+      - NEXTCLOUD_TRUSTED_DOMAINS=nextcloud.${NGINX_HOST}
+      - NEXTCLOUD_ADMIN_USER=penny
+      - NEXTCLOUD_ADMIN_PASSWORD=${SQL_PSWD}
+      - SMTP_HOST=mailserver
+      - SMTP_SECURE=tls
+      - SMTP_NAME=admin@${NGINX_HOST}
+      - SMTP_PASSWORD=${SQL_PSWD}
+    depends_on:
+      - pgsqlserver
+    links:
+      - pgsqlserver
     expose:
-      - "5432"
+      - "9000"
+    volumes:
+      - nextcloud_data:/var/www/html:z
+      - nextcloud_data:/var/www/nextcloud:z
 
   gitea:
     <<: *defaults
     container_name: gitea
     image: gitea/gitea
-    restart: always
     environment:
       - VIRTUAL_HOST=git.${NGINX_HOST}
       - VIRTUAL_PORT=3000
@@ -85,9 +122,9 @@ services:
     volumes:
       - mail_html:/var/www/html:z
       - mail_html:/var/www/roundcube:z
+      - ./config/mail/config.php:/var/roundcube/config/${NGINX_HOST}.php:ro,z
 
   mailserver:
-    build: ./config/mail
     <<: *defaults
     image: mailserver/docker-mailserver:latest
     container_name: mailserver
@@ -101,7 +138,7 @@ services:
       - "587:587"
       - "993:993"
     volumes:
-      - nginx_certs:/etc/letsencrypt/live/:ro,z
+      - nginx_certs:/etc/letsencrypt/live:ro,z
       - mail_data:/var/mail/:z
       - mail_state:/var/mail-state/:z
       - mail_config:/tmp/docker-mailserver/:z
@@ -109,13 +146,11 @@ services:
       - NET_ADMIN
     depends_on:
       - ddnsgd
-    restart: always
 
   reverse-proxy:
     <<: *defaults
     image: nginxproxy/nginx-proxy
     container_name: nginx-proxy
-    restart: always
     environment:
       - DEFAULT_EMAIL=admin@${NGINX_HOST}
     ports:
@@ -128,7 +163,10 @@ services:
       - nginx_certs:/etc/nginx/certs/:z
       - nginx_vhost:/etc/nginx/vhost.d/:z
       - mail_html:/var/www/roundcube:z
+      - nextcloud_data:/var/www/nextcloud:z
       - ./config/nginx/inbox_location:/etc/nginx/vhost.d/inbox.${NGINX_HOST}_location:ro,z
+      - ./config/nginx/nextcloud_location:/etc/nginx/vhost.d/nextcloud.${NGINX_HOST}_location:ro,z
+      - ./config/nginx/header_default:/etc/nginx/vhost.d/default:z
       - /var/run/docker.sock:/tmp/docker.sock:ro,z
     depends_on:
       - ddnsgd
@@ -137,7 +175,6 @@ services:
     <<: *defaults
     image: nginxproxy/acme-companion
     container_name: nginx-proxy-acme
-    restart: always
     volumes_from:
       - reverse-proxy
     volumes:
@@ -150,7 +187,6 @@ services:
     <<: *defaults
     container_name: "ddnsgd"
     image: "ghcr.io/dominickbrasileiro/ddnsgd"
-    restart: "always"
     environment:
       - HOSTNAME=${NGINX_HOST}
       - USERNAME=${DNS_USERNAME}
@@ -159,6 +195,8 @@ services:
 volumes:
   acme-state:
   gitea_data:
+  hugo_data:
+  nextcloud_data:
   nginx_certs:
   nginx_dhparam:
   nginx_html:
