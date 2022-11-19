@@ -1,13 +1,6 @@
-# Config
 
- - Set correct domain-names in config/nginx locations
+# Startup after docker compose
 
-# Startup
+ - Create admin email account
+ - Update dkim and DNS records
 
- - Update accounts
- - Update dkim
-
-# Compose
-
- - Include Hugo in build
- - Include nextcloud in build
