@@ -3,8 +3,8 @@ version: "3.8"
 
 networks:
   internalnet:
-    # driver: bridge
-    # enable_ipv6: false
+    driver: bridge
+    enable_ipv6: false
 
 
 x-mail: &defaults
@@ -15,6 +15,8 @@ x-mail: &defaults
 
 services:
   hugo-html:
+    networks: 
+      - internalnet
     container_name: hugo-html
     build:
       context: ./config/hugo
@@ -132,6 +134,7 @@ services:
     domainname: ${NGINX_HOST}
     environment:
       - POSTMASTER_ADDRESS=admin@${NGINX_HOST}
+      - RELAY_PASSWORD=${SENDGRID_APIKEY}
     ports:
       - "25:25"
       - "143:143"
@@ -189,15 +192,17 @@ services:
     image: "ghcr.io/dominickbrasileiro/ddnsgd"
     environment:
       - HOSTNAME=${NGINX_HOST}
-      - USERNAME=${DNS_USERNAME}
-      - PASSWORD=${DNS_PASSWORD}
+      - USERNAME=${GDNS_USERNAME}
+      - PASSWORD=${GDNS_PASSWORD}
 
   autodiscover:
+    <<: *defaults
     image: monogramm/autodiscover-email-settings:latest
     container_name: autodiscover
     environment:
       - VIRTUAL_HOST=autodiscover.${NGINX_HOST},autoconfig.${NGINX_HOST}
       - VIRTUAL_PORT=8000
+      - LETSENCRYPT_HOST=autodiscover.${NGINX_HOST},autoconfig.${NGINX_HOST}
       - DOMAIN=${NGINX_HOST}
       - IMAP_HOST=mail.${NGINX_HOST}
       - IMAP_PORT=993
