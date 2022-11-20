@@ -5,25 +5,228 @@ networks:
     driver: bridge
     enable_ipv6: false
 
+
 x-mail: &defaults
+  restart: always
   env_file: local.env
   networks:
     - internalnet
 
 services:
+  hugo-html:
+    networks: 
+      - internalnet
+    container_name: hugo-html
+    build:
+      context: ./config/hugo
+      args:
+        HUGO_BASE: lieuwe.${NGINX_HOST}
+    volumes:
+      - hugo_data:/public:z
+      - nginx_certs:/etc/letsencrypt/live:z
 
   hugo-site:
     <<: *defaults
     container_name: hugo-site
-    build: ./config/hugo
     image: nginx:alpine
     environment:
-      - VIRTUAL_HOST=lieuwe.${NGINX_HOST}
       - VIRTUAL_PORT=6262
       - VIRTUAL_PROTO=http
+      - VIRTUAL_HOST=lieuwe.${NGINX_HOST}
       - LETSENCRYPT_HOST=lieuwe.${NGINX_HOST}
     volumes:
+      - hugo_data:/var/www/html:ro,z
       - ./config/hugo/configure:/etc/nginx/templates/default.conf.template:ro,z
-    restart: always
+    ports:
+      - "6262:6262"
+
+  pgsqlserver:
+    <<: *defaults
+    container_name: pgsqlserver
+    image: postgres:15
+    environment:
+      - POSTGRES_MULTIPLE_DATABASES=gitea, roundcube, nextcloud
+      - POSTGRES_PASSWORD=${SQL_PSWD}
+    volumes:
+      - sql_data:/var/lib/postgresql/data/:z
+      - ./config/pg-init-scripts:/docker-entrypoint-initdb.d:ro,z
+    ports:
+      - "5432:5432"
+
+  nextcloud:
+    <<: *defaults
+    image: nextcloud:fpm
+    container_name: nextcloud
+    environment:
+      - VIRTUAL_HOST=nextcloud.${NGINX_HOST}
+      - VIRTUAL_PORT=9000
+      - LETSENCRYPT_HOST=nextcloud.${NGINX_HOST}
+      - POSTGRES_HOST=pgsqlserver
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=nextcloud
+      - POSTGRES_USER=nextcloud
+      - POSTGRES_PASSWORD=${SQL_PSWD}
+      - NEXTCLOUD_TRUSTED_DOMAINS=nextcloud.${NGINX_HOST}
+      - NEXTCLOUD_ADMIN_USER=penny
+      - NEXTCLOUD_ADMIN_PASSWORD=${SQL_PSWD}
+      - SMTP_HOST=mailserver
+      - SMTP_SECURE=tls
+      - SMTP_NAME=admin@${NGINX_HOST}
+      - SMTP_PASSWORD=${SQL_PSWD}
+    depends_on:
+      - pgsqlserver
+    links:
+      - pgsqlserver
     expose:
-      - "6262"
+      - "9000"
+    volumes:
+      - nextcloud_data:/var/www/html:z
+      - nextcloud_data:/var/www/nextcloud:z
+
+  gitea:
+    <<: *defaults
+    container_name: gitea
+    image: gitea/gitea
+    environment:
+      - VIRTUAL_HOST=git.${NGINX_HOST}
+      - VIRTUAL_PORT=3000
+      - LETSENCRYPT_HOST=git.${NGINX_HOST}
+    volumes:
+      - gitea_data:/data:z
+    expose:
+      - "3000"
+    ports:
+      - "222:22"
+    depends_on:
+      - pgsqlserver
+    links:
+      - pgsqlserver
+
+  roundcubemail:
+    <<: *defaults
+    image: roundcube/roundcubemail:latest-fpm
+    container_name: roundcubemail
+    environment:
+      - VIRTUAL_HOST=inbox.${NGINX_HOST}
+      - VIRTUAL_PORT=9000
+      - LETSENCRYPT_HOST=inbox.${NGINX_HOST}
+      - ROUNDCUBEMAIL_DB_HOST=pgsqlserver
+      - ROUNDCUBEMAIL_DEFAULT_HOST=tls://${NGINX_HOST}
+      - ROUNDCUBEMAIL_SMTP_SERVER=tls://${NGINX_HOST}
+      - ROUNDCUBEMAIL_DB_PASSWORD=${SQL_PSWD}
+    depends_on:
+      - pgsqlserver
+    links:
+      - pgsqlserver
+    expose:
+      - "9000"
+    volumes:
+      - mail_html:/var/www/html:z
+      - mail_html:/var/www/roundcube:z
+      - ./config/mail/config.php:/var/roundcube/config/${NGINX_HOST}.php:ro,z
+
+  mailserver:
+    <<: *defaults
+    image: mailserver/docker-mailserver:latest
+    container_name: mailserver
+    hostname: inbox
+    domainname: ${NGINX_HOST}
+    environment:
+      - POSTMASTER_ADDRESS=admin@${NGINX_HOST}
+      - RELAY_PASSWORD=${SENDGRID_APIKEY}
+    ports:
+      - "25:25"
+      - "143:143"
+      - "587:587"
+      - "993:993"
+    volumes:
+      - nginx_certs:/etc/letsencrypt/live:ro,z
+      - mail_data:/var/mail/:z
+      - mail_state:/var/mail-state/:z
+      - mail_config:/tmp/docker-mailserver/:z
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      - ddnsgd
+
+  reverse-proxy:
+    <<: *defaults
+    image: nginxproxy/nginx-proxy
+    container_name: nginx-proxy
+    environment:
+      - DEFAULT_EMAIL=admin@${NGINX_HOST}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - nginx_html:/usr/share/nginx/html:z
+      - nginx_conf:/etc/nginx/conf.d/:z
+      - nginx_dhparam:/etc/nginx/dhparam:z
+      - nginx_certs:/etc/nginx/certs/:z
+      - nginx_vhost:/etc/nginx/vhost.d/:z
+      - mail_html:/var/www/roundcube:z
+      - nextcloud_data:/var/www/nextcloud:z
+      - ./config/nginx/inbox_location:/etc/nginx/vhost.d/inbox.${NGINX_HOST}_location:ro,z
+      - ./config/nginx/nextcloud_location:/etc/nginx/vhost.d/nextcloud.${NGINX_HOST}_location:ro,z
+      - ./config/nginx/header_default:/etc/nginx/vhost.d/default:z
+      - /var/run/docker.sock:/tmp/docker.sock:ro,z
+    depends_on:
+      - ddnsgd
+
+  acme-companion:
+    <<: *defaults
+    image: nginxproxy/acme-companion
+    container_name: nginx-proxy-acme
+    volumes_from:
+      - reverse-proxy
+    volumes:
+      - acme-state:/etc/acme.sh
+      - /var/run/docker.sock:/var/run/docker.sock:ro,z
+    depends_on:
+      - ddnsgd
+
+  ddnsgd:
+    <<: *defaults
+    container_name: "ddnsgd"
+    image: "ghcr.io/dominickbrasileiro/ddnsgd"
+    environment:
+      - HOSTNAME=${NGINX_HOST}
+      - USERNAME=${GDNS_USERNAME}
+      - PASSWORD=${GDNS_PASSWORD}
+
+  autodiscover:
+    <<: *defaults
+    image: monogramm/autodiscover-email-settings:latest
+    container_name: autodiscover
+    environment:
+      - VIRTUAL_HOST=autodiscover.${NGINX_HOST},autoconfig.${NGINX_HOST}
+      - VIRTUAL_PORT=8000
+      - LETSENCRYPT_HOST=autodiscover.${NGINX_HOST},autoconfig.${NGINX_HOST}
+      - DOMAIN=${NGINX_HOST}
+      - IMAP_HOST=mail.${NGINX_HOST}
+      - IMAP_PORT=993
+      - IMAP_SOCKET=SSL
+      - POP_HOST=mail.${NGINX_HOST}
+      - POP_PORT=995
+      - POP_SOCKET=SSL
+      - SMTP_HOST=mail.${NGINX_HOST}
+      - SMTP_PORT=587
+      - SMTP_SOCKET=STARTTLS
+    expose:
+      - "8000"
+
+volumes:
+  acme-state:
+  gitea_data:
+  hugo_data:
+  nextcloud_data:
+  nginx_certs:
+  nginx_dhparam:
+  nginx_html:
+  nginx_conf:
+  nginx_vhost:
+  mail_data:
+  mail_config:
+  mail_state:
+  mail_html:
+  sql_data:
