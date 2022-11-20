@@ -91,8 +91,15 @@ services:
       - VIRTUAL_HOST=git.${NGINX_HOST}
       - VIRTUAL_PORT=3000
       - LETSENCRYPT_HOST=git.${NGINX_HOST}
+      - GITEA__mailer__PASSWD=${SQL_PSWD}
+      - GITEA__server__DOMAIN           = git.${NGINX_HOST}
+      - GITEA__server__SSH_DOMAIN       = git.${NGINX_HOST}
+      - GITEA__server__ROOT_URL         = https://git.${NGINX_HOST}/
+      - GITEA__server__CERT_FILE        = /etc/letsencrypt/live/git.${NGINX_HOST}.crt
+      - GITEA__server__KEY_FILE         = /etc/letsencrypt/live/git.${NGINX_HOST}.key
     volumes:
       - gitea_data:/data:z
+      - nginx_certs:/etc/letsencrypt/live:ro,z
     expose:
       - "3000"
     ports:
