@@ -92,11 +92,11 @@ services:
       - VIRTUAL_PORT=3000
       - LETSENCRYPT_HOST=git.${NGINX_HOST}
       - GITEA__mailer__PASSWD=${SQL_PSWD}
-      - GITEA__server__DOMAIN           = git.${NGINX_HOST}
-      - GITEA__server__SSH_DOMAIN       = git.${NGINX_HOST}
-      - GITEA__server__ROOT_URL         = https://git.${NGINX_HOST}/
-      - GITEA__server__CERT_FILE        = /etc/letsencrypt/live/git.${NGINX_HOST}.crt
-      - GITEA__server__KEY_FILE         = /etc/letsencrypt/live/git.${NGINX_HOST}.key
+      - GITEA__server__DOMAIN=git.${NGINX_HOST}
+      - GITEA__server__SSH_DOMAIN=git.${NGINX_HOST}
+      - GITEA__server__ROOT_URL=https://git.${NGINX_HOST}/
+      - GITEA__server__CERT_FILE=/etc/letsencrypt/live/git.${NGINX_HOST}.crt
+      - GITEA__server__KEY_FILE=/etc/letsencrypt/live/git.${NGINX_HOST}.key
     volumes:
       - gitea_data:/data:z
       - nginx_certs:/etc/letsencrypt/live:ro,z
@@ -139,6 +139,11 @@ services:
     hostname: inbox
     domainname: ${NGINX_HOST}
     environment:
+      - VIRTUAL_HOST=mail.${NGINX_HOST}
+      - LETSENCRYPT_HOST=mail.${NGINX_HOST}
+      - SSL_TYPE=manual
+      - SSL_CERT_PATH=/etc/letsencrypt/live/mail.${NGINX_HOST}.crt
+      - SSL_KEY_PATH=/etc/letsencrypt/live/mail.${NGINX_HOST}.key
       - POSTMASTER_ADDRESS=admin@${NGINX_HOST}
       - RELAY_PASSWORD=${SENDGRID_APIKEY}
     ports:
@@ -200,6 +205,7 @@ services:
       - HOSTNAME=${NGINX_HOST}
       - USERNAME=${GDNS_USERNAME}
       - PASSWORD=${GDNS_PASSWORD}
+      - INTERVAL=9000
 
   autodiscover:
     <<: *defaults
@@ -211,11 +217,8 @@ services:
       - LETSENCRYPT_HOST=autodiscover.${NGINX_HOST},autoconfig.${NGINX_HOST}
       - DOMAIN=${NGINX_HOST}
       - IMAP_HOST=mail.${NGINX_HOST}
-      - IMAP_PORT=993
+      - IMAP_PORT=1993
       - IMAP_SOCKET=SSL
-      - POP_HOST=mail.${NGINX_HOST}
-      - POP_PORT=995
-      - POP_SOCKET=SSL
       - SMTP_HOST=mail.${NGINX_HOST}
       - SMTP_PORT=587
       - SMTP_SOCKET=STARTTLS
