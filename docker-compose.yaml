@@ -23,7 +23,7 @@ services:
         HUGO_BASE: lieuwe.${NGINX_HOST}
     volumes:
       - hugo_data:/public:z
-      - nginx_certs:/etc/letsencrypt/live:z
+      - nginx_certs:/etc/letsencrypt/live:ro,z
 
   hugo-site:
     <<: *defaults
@@ -52,6 +52,11 @@ services:
       - ./config/pg-init-scripts:/docker-entrypoint-initdb.d:ro,z
     ports:
       - "5432:5432"
+    healthcheck:
+      test: "pg_isready"
+      timeout: 45s
+      interval: 10s
+      retries: 10
 
   nextcloud:
     <<: *defaults
@@ -74,7 +79,10 @@ services:
       - SMTP_NAME=admin@${NGINX_HOST}
       - SMTP_PASSWORD=${SQL_PSWD}
     depends_on:
-      - pgsqlserver
+      pgsqlserver:
+        condition: service_healthy
+      acme-companion:
+        condition: service_healthy
     links:
       - pgsqlserver
     expose:
@@ -105,7 +113,10 @@ services:
     ports:
       - "222:22"
     depends_on:
-      - pgsqlserver
+      pgsqlserver:
+        condition: service_healthy
+      acme-companion:
+        condition: service_healthy
     links:
       - pgsqlserver
 
@@ -122,7 +133,10 @@ services:
       - ROUNDCUBEMAIL_SMTP_SERVER=tls://${NGINX_HOST}
       - ROUNDCUBEMAIL_DB_PASSWORD=${SQL_PSWD}
     depends_on:
-      - pgsqlserver
+      pgsqlserver:
+        condition: service_healthy
+      acme-companion:
+        condition: service_healthy
     links:
       - pgsqlserver
     expose:
@@ -159,11 +173,12 @@ services:
     cap_add:
       - NET_ADMIN
     depends_on:
-      - ddnsgd
+      acme-companion:
+        condition: service_healthy
 
   reverse-proxy:
     <<: *defaults
-    image: nginxproxy/nginx-proxy
+    image: nginxproxy/nginx-proxy:1.2.3
     container_name: nginx-proxy
     environment:
       - DEFAULT_EMAIL=admin@${NGINX_HOST}
@@ -174,7 +189,7 @@ services:
       - nginx_html:/usr/share/nginx/html:z
       - nginx_conf:/etc/nginx/conf.d/:z
       - nginx_dhparam:/etc/nginx/dhparam:z
-      - nginx_certs:/etc/nginx/certs/:z
+      - nginx_certs:/etc/nginx/certs/:ro,z
       - nginx_vhost:/etc/nginx/vhost.d/:z
       - mail_html:/var/www/roundcube:z
       - nextcloud_data:/var/www/nextcloud:z
@@ -183,19 +198,32 @@ services:
       - ./config/nginx/header_default:/etc/nginx/vhost.d/default:z
       - /var/run/docker.sock:/tmp/docker.sock:ro,z
     depends_on:
-      - ddnsgd
+      ddnsgd:
+        condition: service_healthy
 
   acme-companion:
     <<: *defaults
-    image: nginxproxy/acme-companion
+    image: nginxproxy/acme-companion:2.2.3
     container_name: nginx-proxy-acme
+    environment:
+      - DEFAULT_EMAIL=admin@${NGINX_HOST}
     volumes_from:
       - reverse-proxy
     volumes:
       - acme-state:/etc/acme.sh
+      - nginx_certs:/etc/nginx/certs:rw,z
       - /var/run/docker.sock:/var/run/docker.sock:ro,z
     depends_on:
       - ddnsgd
+    healthcheck:
+      test: test -f /etc/nginx/certs/lieuwe.${NGINX_HOST}.key
+      interval: 60s
+      retries: 5
+      start_period: 5s
+      timeout: 10s
+    depends_on:
+      ddnsgd:
+        condition: service_healthy
 
   ddnsgd:
     <<: *defaults
@@ -206,6 +234,12 @@ services:
       - USERNAME=${GDNS_USERNAME}
       - PASSWORD=${GDNS_PASSWORD}
       - INTERVAL=9000
+    healthcheck:
+      test: /usr/bin/nslookup ${NGINX_HOST}
+      interval: 30s
+      retries: 5
+      start_period: 2s
+      timeout: 10s
 
   autodiscover:
     <<: *defaults
@@ -224,6 +258,9 @@ services:
       - SMTP_SOCKET=STARTTLS
     expose:
       - "8000"
+    depends_on:
+      acme-companion:
+        condition: service_healthy
 
 volumes:
   acme-state:
