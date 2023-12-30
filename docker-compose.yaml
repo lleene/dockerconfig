@@ -5,16 +5,46 @@ networks:
     driver: bridge
     enable_ipv6: false
 
-
-x-mail: &defaults
+x-mail:
+  &defaults
   restart: always
   env_file: local.env
   networks:
     - internalnet
 
 services:
+
+  certbot:
+    <<: *defaults
+    image: ghcr.io/aaomidi/certbot-dns-google-domains:latest
+    container_name: certbot
+    command: >
+      sh -c "certbot certonly --authenticator dns-google-domains --dns-google-domains-credentials /var/lib/letsencrypt/dns_google_domains_credentials.ini --server https://acme-v02.api.letsencrypt.org/directory --non-interactive --dns-google-domains-zone ${NGINX_HOST} --agree-tos --email admin@${NGINX_HOST} -d ${NGINX_HOST} -d mail.${NGINX_HOST} -d inbox.${NGINX_HOST} -d lieuwe.${NGINX_HOST} -d nextcloud.${NGINX_HOST} -d git.${NGINX_HOST} -d autodiscover.${NGINX_HOST}"
+    volumes:
+      - certbot_state:/var/lib/letsencrypt:z
+      - nginx_archive:/etc/letsencrypt/archive:z
+      - nginx_certs:/etc/letsencrypt/live:z
+      - ./config/nginx/credentials.ini:/var/lib/letsencrypt/dns_google_domains_credentials.ini:ro,z
+
+
+  ddnsgd:
+    <<: *defaults
+    container_name: "ddnsgd"
+    image: "ghcr.io/dominickbrasileiro/ddnsgd"
+    environment:
+      - HOSTNAME=${NGINX_HOST}
+      - USERNAME=${GDNS_USERNAME}
+      - PASSWORD=${GDNS_PASSWORD}
+      - INTERVAL=9000
+    healthcheck:
+      test: /usr/bin/nslookup ${NGINX_HOST}
+      interval: 30s
+      retries: 5
+      start_period: 2s
+      timeout: 10s
+
   hugo-html:
-    networks: 
+    networks:
       - internalnet
     container_name: hugo-html
     build:
@@ -23,7 +53,6 @@ services:
         HUGO_BASE: lieuwe.${NGINX_HOST}
     volumes:
       - hugo_data:/public:z
-      - nginx_certs:/etc/letsencrypt/live:ro,z
 
   hugo-site:
     <<: *defaults
@@ -81,8 +110,6 @@ services:
     depends_on:
       pgsqlserver:
         condition: service_healthy
-      acme-companion:
-        condition: service_healthy
     links:
       - pgsqlserver
     expose:
@@ -107,6 +134,7 @@ services:
       - GITEA__server__KEY_FILE=/etc/letsencrypt/live/git.${NGINX_HOST}.key
     volumes:
       - gitea_data:/data:z
+      - nginx_archive:/etc/letsencrypt/archive:ro,z
       - nginx_certs:/etc/letsencrypt/live:ro,z
     expose:
       - "3000"
@@ -114,8 +142,6 @@ services:
       - "222:22"
     depends_on:
       pgsqlserver:
-        condition: service_healthy
-      acme-companion:
         condition: service_healthy
     links:
       - pgsqlserver
@@ -134,8 +160,6 @@ services:
       - ROUNDCUBEMAIL_DB_PASSWORD=${SQL_PSWD}
     depends_on:
       pgsqlserver:
-        condition: service_healthy
-      acme-companion:
         condition: service_healthy
     links:
       - pgsqlserver
@@ -166,15 +190,13 @@ services:
       - "587:587"
       - "993:993"
     volumes:
+      - nginx_archive:/etc/letsencrypt/archive:ro,z
       - nginx_certs:/etc/letsencrypt/live:ro,z
       - mail_data:/var/mail/:z
       - mail_state:/var/mail-state/:z
       - mail_config:/tmp/docker-mailserver/:z
     cap_add:
       - NET_ADMIN
-    depends_on:
-      acme-companion:
-        condition: service_healthy
 
   reverse-proxy:
     <<: *defaults
@@ -189,7 +211,8 @@ services:
       - nginx_html:/usr/share/nginx/html:z
       - nginx_conf:/etc/nginx/conf.d/:z
       - nginx_dhparam:/etc/nginx/dhparam:z
-      - nginx_certs:/etc/nginx/certs/:ro,z
+      - nginx_archive:/etc/nginx/archive/:ro,z
+      - nginx_certs:/etc/nginx/certs/:z
       - nginx_vhost:/etc/nginx/vhost.d/:z
       - mail_html:/var/www/roundcube:z
       - nextcloud_data:/var/www/nextcloud:z
@@ -201,73 +224,14 @@ services:
       ddnsgd:
         condition: service_healthy
 
-  acme-companion:
-    <<: *defaults
-    image: nginxproxy/acme-companion:2.2.3
-    container_name: nginx-proxy-acme
-    environment:
-      - DEFAULT_EMAIL=admin@${NGINX_HOST}
-    volumes_from:
-      - reverse-proxy
-    volumes:
-      - acme-state:/etc/acme.sh
-      - nginx_certs:/etc/nginx/certs:rw,z
-      - /var/run/docker.sock:/var/run/docker.sock:ro,z
-    depends_on:
-      - ddnsgd
-    healthcheck:
-      test: test -f /etc/nginx/certs/lieuwe.${NGINX_HOST}.key
-      interval: 60s
-      retries: 5
-      start_period: 5s
-      timeout: 10s
-    depends_on:
-      ddnsgd:
-        condition: service_healthy
-
-  ddnsgd:
-    <<: *defaults
-    container_name: "ddnsgd"
-    image: "ghcr.io/dominickbrasileiro/ddnsgd"
-    environment:
-      - HOSTNAME=${NGINX_HOST}
-      - USERNAME=${GDNS_USERNAME}
-      - PASSWORD=${GDNS_PASSWORD}
-      - INTERVAL=9000
-    healthcheck:
-      test: /usr/bin/nslookup ${NGINX_HOST}
-      interval: 30s
-      retries: 5
-      start_period: 2s
-      timeout: 10s
-
-  autodiscover:
-    <<: *defaults
-    image: monogramm/autodiscover-email-settings:latest
-    container_name: autodiscover
-    environment:
-      - VIRTUAL_HOST=autodiscover.${NGINX_HOST},autoconfig.${NGINX_HOST}
-      - VIRTUAL_PORT=8000
-      - LETSENCRYPT_HOST=autodiscover.${NGINX_HOST},autoconfig.${NGINX_HOST}
-      - DOMAIN=${NGINX_HOST}
-      - IMAP_HOST=mail.${NGINX_HOST}
-      - IMAP_PORT=1993
-      - IMAP_SOCKET=SSL
-      - SMTP_HOST=mail.${NGINX_HOST}
-      - SMTP_PORT=587
-      - SMTP_SOCKET=STARTTLS
-    expose:
-      - "8000"
-    depends_on:
-      acme-companion:
-        condition: service_healthy
 
 volumes:
-  acme-state:
+  certbot_state:
+  nginx_archive:
+  nginx_certs:
   gitea_data:
   hugo_data:
   nextcloud_data:
-  nginx_certs:
   nginx_dhparam:
   nginx_html:
   nginx_conf:

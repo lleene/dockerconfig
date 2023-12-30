@@ -21,10 +21,10 @@ RUN apk add --update git asciidoctor libc6-compat libstdc++ \
     && /usr/local/sbin/hugo -b ${BASE_URL}/ -s /src -d /public --minify
 
 RUN apk update && \
-  apk add --no-cache openssl && \
-  rm -rf /var/cache/apk/*
+    apk add --no-cache openssl && \
+    rm -rf /var/cache/apk/*
 
-RUN mkdir -p /etc/letsencrypt/live
+WORKDIR /etc/letsencrypt/live
 
 RUN openssl ecparam -name ${SSL_ALGO} -genkey | openssl pkey -out /etc/letsencrypt/live/ecprivkey.pem && \
-    openssl pkey -in /etc/letsencrypt/live/ecprivkey.pem -pubout -out /etc/letsencrypt/live/ecpubkey.pem
+    openssl pkey -in /etc/letsencrypt/live/ecprivkey.pem -pubout -out /etc/letsencrypt/live/ecpubkey.pem 
