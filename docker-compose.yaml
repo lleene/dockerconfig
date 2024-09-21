@@ -16,32 +16,14 @@ services:
 
   certbot:
     <<: *defaults
-    image: ghcr.io/aaomidi/certbot-dns-google-domains:latest
+    image: certbot/dns-cloudflare
     container_name: certbot
-    command: >
-      sh -c "certbot certonly --authenticator dns-google-domains --dns-google-domains-credentials /var/lib/letsencrypt/dns_google_domains_credentials.ini --server https://acme-v02.api.letsencrypt.org/directory --non-interactive --dns-google-domains-zone ${NGINX_HOST} --agree-tos --email admin@${NGINX_HOST} -d ${NGINX_HOST} -d mail.${NGINX_HOST} -d inbox.${NGINX_HOST} -d lieuwe.${NGINX_HOST} -d nextcloud.${NGINX_HOST} -d git.${NGINX_HOST} -d autodiscover.${NGINX_HOST}"
+    command: certonly --non-interactive --dns-cloudflare --dns-cloudflare-credentials /config/credentials.ini --agree-tos --email admin@${NGINX_HOST} -d ${NGINX_HOST} -d mail.${NGINX_HOST} -d inbox.${NGINX_HOST} -d lieuwe.${NGINX_HOST} -d nextcloud.${NGINX_HOST} -d git.${NGINX_HOST} --server https://acme-v02.api.letsencrypt.org/directory
     volumes:
       - certbot_state:/var/lib/letsencrypt:z
       - nginx_archive:/etc/letsencrypt/archive:z
       - nginx_certs:/etc/letsencrypt/live:z
-      - ./config/nginx/credentials.ini:/var/lib/letsencrypt/dns_google_domains_credentials.ini:ro,z
-
-
-  ddnsgd:
-    <<: *defaults
-    container_name: "ddnsgd"
-    image: "ghcr.io/dominickbrasileiro/ddnsgd"
-    environment:
-      - HOSTNAME=${NGINX_HOST}
-      - USERNAME=${GDNS_USERNAME}
-      - PASSWORD=${GDNS_PASSWORD}
-      - INTERVAL=9000
-    healthcheck:
-      test: /usr/bin/nslookup ${NGINX_HOST}
-      interval: 30s
-      retries: 5
-      start_period: 2s
-      timeout: 10s
+      - ./config/nginx/credentials.ini:/config/credentials.ini:ro,z
 
   hugo-html:
     networks:
@@ -221,10 +203,6 @@ services:
       - ./config/nginx/nextcloud_location:/etc/nginx/vhost.d/nextcloud.${NGINX_HOST}_location:ro,z
       - ./config/nginx/header_default:/etc/nginx/vhost.d/default:z
       - /var/run/docker.sock:/tmp/docker.sock:ro,z
-    depends_on:
-      ddnsgd:
-        condition: service_healthy
-
 
 volumes:
   certbot_state:
