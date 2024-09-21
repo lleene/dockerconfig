@@ -7,7 +7,7 @@ networks:
 
 x-mail:
   &defaults
-  restart: always
+  restart: unless-stopped
   env_file: local.env
   networks:
     - internalnet
@@ -195,6 +195,7 @@ services:
       - mail_data:/var/mail/:z
       - mail_state:/var/mail-state/:z
       - mail_config:/tmp/docker-mailserver/:z
+      - ./config/mail/postfix-policyd-spf.conf:/etc/postfix-policyd-spf-python/policyd-spf.conf:ro,z
     cap_add:
       - NET_ADMIN
 
