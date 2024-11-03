@@ -18,12 +18,12 @@ services:
     <<: *defaults
     image: certbot/dns-cloudflare
     container_name: certbot
-    command: certonly --non-interactive --dns-cloudflare --dns-cloudflare-credentials /config/credentials.ini --agree-tos --email admin@${NGINX_HOST} -d ${NGINX_HOST} -d mail.${NGINX_HOST} -d inbox.${NGINX_HOST} -d lieuwe.${NGINX_HOST} -d nextcloud.${NGINX_HOST} -d git.${NGINX_HOST} --server https://acme-v02.api.letsencrypt.org/directory
+    command: certonly --non-interactive --dns-cloudflare --dns-cloudflare-credentials /config/credentials.ini --agree-tos --email admin@${NGINX_HOST} -d ${NGINX_HOST} -d lieuwe.${NGINX_HOST} -d mail.${NGINX_HOST} -d inbox.${NGINX_HOST} -d nextcloud.${NGINX_HOST} -d git.${NGINX_HOST} -d autodiscover.${NGINX_HOST} --server https://acme-v02.api.letsencrypt.org/directory
     volumes:
       - certbot_state:/var/lib/letsencrypt:z
       - nginx_archive:/etc/letsencrypt/archive:z
       - nginx_certs:/etc/letsencrypt/live:z
-      - ./config/nginx/credentials.ini:/config/credentials.ini:ro,z
+      - ./config/nginx/credentials.ini:/config/credentials.ini:z
 
   hugo-html:
     networks:
