@@ -5,16 +5,28 @@ networks:
     driver: bridge
     enable_ipv6: false
 
-
-x-mail: &defaults
-  restart: always
+x-mail:
+  &defaults
+  restart: unless-stopped
   env_file: local.env
   networks:
     - internalnet
 
 services:
+
+  certbot:
+    <<: *defaults
+    image: certbot/dns-cloudflare
+    container_name: certbot
+    command: certonly --non-interactive --dns-cloudflare --dns-cloudflare-credentials /config/credentials.ini --agree-tos --email admin@${NGINX_HOST} -d ${NGINX_HOST} -d lieuwe.${NGINX_HOST} -d mail.${NGINX_HOST} -d inbox.${NGINX_HOST} -d nextcloud.${NGINX_HOST} -d git.${NGINX_HOST} -d autodiscover.${NGINX_HOST} --server https://acme-v02.api.letsencrypt.org/directory
+    volumes:
+      - certbot_state:/var/lib/letsencrypt:z
+      - nginx_archive:/etc/letsencrypt/archive:z
+      - nginx_certs:/etc/letsencrypt/live:z
+      - ./config/nginx/credentials.ini:/config/credentials.ini:z
+
   hugo-html:
-    networks: 
+    networks:
       - internalnet
     container_name: hugo-html
     build:
@@ -23,7 +35,6 @@ services:
         HUGO_BASE: lieuwe.${NGINX_HOST}
     volumes:
       - hugo_data:/public:z
-      - nginx_certs:/etc/letsencrypt/live:z
 
   hugo-site:
     <<: *defaults
@@ -52,6 +63,11 @@ services:
       - ./config/pg-init-scripts:/docker-entrypoint-initdb.d:ro,z
     ports:
       - "5432:5432"
+    healthcheck:
+      test: "pg_isready"
+      timeout: 45s
+      interval: 10s
+      retries: 10
 
   nextcloud:
     <<: *defaults
@@ -74,7 +90,8 @@ services:
       - SMTP_NAME=admin@${NGINX_HOST}
       - SMTP_PASSWORD=${SQL_PSWD}
     depends_on:
-      - pgsqlserver
+      pgsqlserver:
+        condition: service_healthy
     links:
       - pgsqlserver
     expose:
@@ -99,13 +116,15 @@ services:
       - GITEA__server__KEY_FILE=/etc/letsencrypt/live/git.${NGINX_HOST}.key
     volumes:
       - gitea_data:/data:z
+      - nginx_archive:/etc/letsencrypt/archive:ro,z
       - nginx_certs:/etc/letsencrypt/live:ro,z
     expose:
       - "3000"
     ports:
       - "222:22"
     depends_on:
-      - pgsqlserver
+      pgsqlserver:
+        condition: service_healthy
     links:
       - pgsqlserver
 
@@ -122,7 +141,8 @@ services:
       - ROUNDCUBEMAIL_SMTP_SERVER=tls://${NGINX_HOST}
       - ROUNDCUBEMAIL_DB_PASSWORD=${SQL_PSWD}
     depends_on:
-      - pgsqlserver
+      pgsqlserver:
+        condition: service_healthy
     links:
       - pgsqlserver
     expose:
@@ -152,18 +172,18 @@ services:
       - "587:587"
       - "993:993"
     volumes:
+      - nginx_archive:/etc/letsencrypt/archive:ro,z
       - nginx_certs:/etc/letsencrypt/live:ro,z
       - mail_data:/var/mail/:z
       - mail_state:/var/mail-state/:z
       - mail_config:/tmp/docker-mailserver/:z
+      - ./config/mail/postfix-policyd-spf.conf:/etc/postfix-policyd-spf-python/policyd-spf.conf:ro,z
     cap_add:
       - NET_ADMIN
-    depends_on:
-      - ddnsgd
 
   reverse-proxy:
     <<: *defaults
-    image: nginxproxy/nginx-proxy
+    image: nginxproxy/nginx-proxy:1.2.3
     container_name: nginx-proxy
     environment:
       - DEFAULT_EMAIL=admin@${NGINX_HOST}
@@ -174,6 +194,7 @@ services:
       - nginx_html:/usr/share/nginx/html:z
       - nginx_conf:/etc/nginx/conf.d/:z
       - nginx_dhparam:/etc/nginx/dhparam:z
+      - nginx_archive:/etc/nginx/archive/:ro,z
       - nginx_certs:/etc/nginx/certs/:z
       - nginx_vhost:/etc/nginx/vhost.d/:z
       - mail_html:/var/www/roundcube:z
@@ -182,55 +203,14 @@ services:
       - ./config/nginx/nextcloud_location:/etc/nginx/vhost.d/nextcloud.${NGINX_HOST}_location:ro,z
       - ./config/nginx/header_default:/etc/nginx/vhost.d/default:z
       - /var/run/docker.sock:/tmp/docker.sock:ro,z
-    depends_on:
-      - ddnsgd
-
-  acme-companion:
-    <<: *defaults
-    image: nginxproxy/acme-companion
-    container_name: nginx-proxy-acme
-    volumes_from:
-      - reverse-proxy
-    volumes:
-      - acme-state:/etc/acme.sh
-      - /var/run/docker.sock:/var/run/docker.sock:ro,z
-    depends_on:
-      - ddnsgd
-
-  ddnsgd:
-    <<: *defaults
-    container_name: "ddnsgd"
-    image: "ghcr.io/dominickbrasileiro/ddnsgd"
-    environment:
-      - HOSTNAME=${NGINX_HOST}
-      - USERNAME=${GDNS_USERNAME}
-      - PASSWORD=${GDNS_PASSWORD}
-      - INTERVAL=9000
-
-  autodiscover:
-    <<: *defaults
-    image: monogramm/autodiscover-email-settings:latest
-    container_name: autodiscover
-    environment:
-      - VIRTUAL_HOST=autodiscover.${NGINX_HOST},autoconfig.${NGINX_HOST}
-      - VIRTUAL_PORT=8000
-      - LETSENCRYPT_HOST=autodiscover.${NGINX_HOST},autoconfig.${NGINX_HOST}
-      - DOMAIN=${NGINX_HOST}
-      - IMAP_HOST=mail.${NGINX_HOST}
-      - IMAP_PORT=1993
-      - IMAP_SOCKET=SSL
-      - SMTP_HOST=mail.${NGINX_HOST}
-      - SMTP_PORT=587
-      - SMTP_SOCKET=STARTTLS
-    expose:
-      - "8000"
 
 volumes:
-  acme-state:
+  certbot_state:
+  nginx_archive:
+  nginx_certs:
   gitea_data:
   hugo_data:
   nextcloud_data:
-  nginx_certs:
   nginx_dhparam:
   nginx_html:
   nginx_conf:
